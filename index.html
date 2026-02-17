@@ -477,6 +477,33 @@ mark {
     <span class="section-num">01 · INTEL-BASED MICROPROCESSOR SYSTEMS</span>
     <h2>The 8086/8088 Microprocessor</h2>
 
+    <div class="card" style="border-color:rgba(96,165,250,0.3); background:linear-gradient(135deg, var(--surface), rgba(96,165,250,0.04));">
+      <h3><span class="icon accent">★</span> The Big Picture: What IS the 8088 System?</h3>
+      <p>The Intel 8088 is a CPU — but it can't work alone. It needs a team of helper chips to form a complete microcomputer system. Here's why:</p>
+      <div class="kv-grid" style="margin-top:12px;">
+        <div class="kv">
+          <div class="kv-label">The Pin Problem</div>
+          <div class="kv-value">The 8088 only has 40 pins on its chip package. It needs 20 pins for addresses (to talk to 1 MB of memory) and 8 pins for data — but 20+8 = 28 pins just for buses, leaving almost nothing for control signals. <strong>Intel's solution: share the same 8 pins for both address and data</strong> (multiplexed bus, pins AD0–AD7). During T1 of a bus cycle, these pins carry the address; during T2–T4, they carry data. But this means you need an external chip to "catch" the address before data appears.</div>
+        </div>
+        <div class="kv">
+          <div class="kv-label">The Helper Chips</div>
+          <div class="kv-value">
+            • <strong>8284 Clock Generator:</strong> Takes a crystal and produces the CLK signal that drives the CPU. Also produces PCLK for peripherals and synchronizes the READY and RESET signals.<br>
+            • <strong>74LS373 Octal Latch (×2):</strong> Catches and holds the address from AD0–AD7 when ALE fires, so the address stays stable while data appears on the same pins. A second latch buffers A8–A15 for drive strength.<br>
+            • <strong>74LS245 Bus Transceiver:</strong> Bidirectional data buffer. Amplifies the data bus signals so the CPU doesn't have to drive all the memory and I/O chips directly.<br>
+            • <strong>74LS138 Decoder:</strong> Takes the upper address bits and generates chip-select signals to enable specific memory or I/O chips.
+          </div>
+        </div>
+        <div class="kv">
+          <div class="kv-label">The Data Flow</div>
+          <div class="kv-value"><strong>Crystal → 8284 → CLK → 8088 CPU → AD0–AD7 (multiplexed) → 74LS373 (latches address) → Address Bus → Memory/IO</strong><br>On the data side: <strong>Memory/IO → Data Bus → 74LS245 (buffer) → 8088 CPU</strong><br>Control signals (MEMR', MEMW', IOR', IOW') are generated from the CPU's RD', WR', and IO/M' pins via simple logic gates.</div>
+        </div>
+      </div>
+      <div class="callout tip" style="margin-top:12px;">
+        <strong>Think of it this way:</strong> The 8088 is the brain. The 8284 is the heartbeat. The 74LS373s are the brain's short-term memory for addresses. The 74LS245 is a megaphone for data. The 74LS138 is the receptionist deciding which chip gets talked to.
+      </div>
+    </div>
+
     <div class="card">
       <h3><span class="icon blue">◆</span> Components of a Microprocessor-Based System</h3>
       <ul>
@@ -846,6 +873,50 @@ mark {
         <polyline points="100,275 210,275 210,290 470,290 470,275 537,275" fill="none" stroke="#f59e0b" stroke-width="1.5"/>
         <text x="340" y="303" fill="#f59e0b" font-size="9" font-family="IBM Plex Mono" text-anchor="middle">Active (Buffer On)</text>
       </svg>
+    </div>
+
+    <div class="card" style="border-color:rgba(251,191,36,0.3); background:linear-gradient(135deg, var(--surface), rgba(251,191,36,0.04));">
+      <h3><span class="icon amber">★</span> Wait States: What They Are and How to Calculate Them</h3>
+      <p>The CPU expects memory to respond within a fixed window (roughly <strong>3 T-states</strong> from address out to data needed). But what if the memory chip is too slow?</p>
+
+      <div class="kv-grid" style="margin-top:12px;">
+        <div class="kv">
+          <div class="kv-label">The Problem</div>
+          <div class="kv-value">The CPU puts an address on the bus at the start of T1. By mid-T3, it samples the data bus expecting valid data. The total time the memory has = about 3 T-states, minus delays through the latch (74LS373) and buffer (74LS245) and the CPU's own data setup time. If the memory chip can't respond in that window, the data won't be valid when the CPU reads it → wrong data.</div>
+        </div>
+        <div class="kv">
+          <div class="kv-label">The Solution: Wait States (Tw)</div>
+          <div class="kv-value">The CPU inserts extra T-states (called <strong>Tw</strong>) between T3 and T4. Each wait state adds exactly <strong>1 T-state</strong> of extra time. During Tw, the CPU just... waits. It keeps checking the <code>READY</code> pin — when READY goes high, the CPU exits the wait state and proceeds to T4 to read the data. The 8284 synchronizes the READY signal so it aligns with the clock edge.</div>
+        </div>
+        <div class="kv">
+          <div class="kv-label">The 3-Step Calculation</div>
+          <div class="kv-value">
+            <strong>Step 1:</strong> Calculate available time (with 0 wait states):<br>
+            <code>t_available = (number of T-states from addr valid to data sample) × T_state − t_latch − t_buffer − t_setup</code><br>
+            For the 8088: typically ~3 T-states × T_state, minus delays. (Exact value depends on the specific timing parameters from the datasheet.)<br><br>
+            <strong>Step 2:</strong> Compare with memory access time:<br>
+            If <code>t_memory ≤ t_available</code> → <strong>0 wait states needed</strong>. Memory is fast enough.<br>
+            If <code>t_memory > t_available</code> → need wait states.<br><br>
+            <strong>Step 3:</strong> Calculate how many:<br>
+            <code>n_wait = ⌈(t_memory − t_available) / T_state⌉</code><br>
+            (That's ceiling — always round UP. You can't add half a wait state.)<br>
+            Each wait state gives you an extra T_state of time.
+          </div>
+        </div>
+        <div class="kv">
+          <div class="kv-label">Quick Example</div>
+          <div class="kv-value">
+            8088 at 5 MHz → T_state = 200 ns → available time (after delays) = 440 ns.<br>
+            Memory A = 350 ns → 350 < 440 → <strong>0 wait states</strong>. ✓<br>
+            Memory B = 500 ns → 500 > 440 → deficit = 60 ns → 60/200 = 0.3 → ⌈0.3⌉ = <strong>1 wait state</strong>.<br>
+            With 1 wait state: new available = 440 + 200 = 640 ns. 500 < 640 ✓
+          </div>
+        </div>
+      </div>
+
+      <div class="callout tip" style="margin-top:12px;">
+        <strong>Bus cycle duration formula:</strong> <code>Bus cycle = (4 + n_wait) × T_state</code>. With 0 wait states at 5 MHz: 4 × 200 = 800 ns. With 1 wait state: 5 × 200 = 1000 ns. Every wait state makes the system slower — that's why fast memory matters.
+      </div>
     </div>
 
     <div class="card">
@@ -3058,7 +3129,7 @@ mark {
     <p>These simulate the ~30-40% identification section. Try answering before revealing the solutions.</p>
 
     <div class="card">
-      <h3><span class="icon blue">Q1</span> What is the purpose of the ALE signal on the 8088?</h3>
+      <h3><span class="icon blue">Q1</span> What is the purpose of the ALE signal on the 8088? <a href="#bus-demux" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §01.3 Bus Demux</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3068,7 +3139,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q2</span> What are the four control bus signals generated from the 8088, and how are they derived?</h3>
+      <h3><span class="icon blue">Q2</span> What are the four control bus signals generated from the 8088, and how are they derived? <a href="#bus-demux" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §01.3 Bus Demux</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3085,7 +3156,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q3</span> What is the difference between RAS-only refresh and CAS-before-RAS refresh?</h3>
+      <h3><span class="icon blue">Q3</span> What is the difference between RAS-only refresh and CAS-before-RAS refresh? <a href="#dram-refresh" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §02.2 Refresh</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3096,7 +3167,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q4</span> Why can the 8237 DMAC transfer data faster than the CPU for block data movement?</h3>
+      <h3><span class="icon blue">Q4</span> Why can the 8237 DMAC transfer data faster than the CPU for block data movement? <a href="#dma" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §04 DMA</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3106,7 +3177,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q5</span> What is the role of BHE' and A0 in the 8086 memory system?</h3>
+      <h3><span class="icon blue">Q5</span> What is the role of BHE' and A0 in the 8086 memory system? <a href="#8086-databus" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §01.5 Data Bus</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3123,7 +3194,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q6</span> What is the CLK frequency and PCLK frequency if the 8284 is driven by a 14.318 MHz crystal?</h3>
+      <h3><span class="icon blue">Q6</span> What is the CLK frequency and PCLK frequency if the 8284 is driven by a 14.318 MHz crystal? <a href="#8284-clock" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §01.2 Clock Gen</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3134,7 +3205,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q7</span> What is the Interrupt Vector Table? How is it organized?</h3>
+      <h3><span class="icon blue">Q7</span> What is the Interrupt Vector Table? How is it organized? <a href="#interrupts" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §03 Interrupts</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3144,7 +3215,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q8</span> What problem did SDRAM solve over EDO/FPM DRAM? What key feature does it introduce?</h3>
+      <h3><span class="icon blue">Q8</span> What problem did SDRAM solve over EDO/FPM DRAM? What key feature does it introduce? <a href="#modern-dram" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §05.1 Modern DRAM</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3154,7 +3225,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q9</span> Describe the sequence of events when an external device interrupts the 8088 via INTR.</h3>
+      <h3><span class="icon blue">Q9</span> Describe the sequence of events when an external device interrupts the 8088 via INTR. <a href="#interrupts" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §03 Interrupts</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3171,7 +3242,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q10</span> What is the role of DREQ, DACK, HRQ, and HLDA in the 8237 DMA system?</h3>
+      <h3><span class="icon blue">Q10</span> What is the role of DREQ, DACK, HRQ, and HLDA in the 8237 DMA system? <a href="#dma" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §04 DMA</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3186,7 +3257,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q11</span> In the 8237 DMA controller, what are the four transfer types, and which control signals are active for each?</h3>
+      <h3><span class="icon blue">Q11</span> In the 8237 DMA controller, what are the four transfer types, and which control signals are active for each? <a href="#dma" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §04 DMA</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3201,7 +3272,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q12</span> What is the purpose of the First/Last Flip-Flop in the 8237 DMA controller?</h3>
+      <h3><span class="icon blue">Q12</span> What is the purpose of the First/Last Flip-Flop in the 8237 DMA controller? <a href="#dma" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §04 DMA</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3211,7 +3282,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q13</span> In the IBM PC/XT, how is DRAM refresh implemented? Which chips are involved?</h3>
+      <h3><span class="icon blue">Q13</span> In the IBM PC/XT, how is DRAM refresh implemented? Which chips are involved? <a href="#pc-arch" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §05 PC/XT</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3229,7 +3300,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q14</span> Name the five key support chips in the IBM PC/XT and state each one's function and I/O address range.</h3>
+      <h3><span class="icon blue">Q14</span> Name the five key support chips in the IBM PC/XT and state each one's function and I/O address range. <a href="#pc-arch" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §05 PC/XT</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3245,7 +3316,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q15</span> What is the fundamental difference between SDR SDRAM and DDR SDRAM? How does DDR2 differ from DDR?</h3>
+      <h3><span class="icon blue">Q15</span> What is the fundamental difference between SDR SDRAM and DDR SDRAM? How does DDR2 differ from DDR? <a href="#modern-dram" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §05.1 Modern DRAM</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3256,7 +3327,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q16</span> What are the key innovations of DDR3 over DDR2? Why does DDR3 need write leveling?</h3>
+      <h3><span class="icon blue">Q16</span> What are the key innovations of DDR3 over DDR2? Why does DDR3 need write leveling? <a href="#modern-dram" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §05.1 Modern DRAM</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3274,7 +3345,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon blue">Q17</span> What is the PC/XT memory map? Identify the address ranges for RAM, display buffer, and BIOS.</h3>
+      <h3><span class="icon blue">Q17</span> What is the PC/XT memory map? Identify the address ranges for RAM, display buffer, and BIOS. <a href="#pc-arch" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §05 PC/XT</a></h3>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; color:var(--accent); font-size:13px;">Show Answer</summary>
         <div style="margin-top:12px; padding:12px; background:var(--surface2); border-radius:8px;">
@@ -3297,7 +3368,7 @@ mark {
     <h2>Practice Problems: Timing</h2>
 
     <div class="card">
-      <h3><span class="icon amber">T1</span> 8088 Read Cycle — Memory Access Time Calculation</h3>
+      <h3><span class="icon amber">T1</span> 8088 Read Cycle — Memory Access Time Calculation <a href="#timing" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §01.4 Timing</a></h3>
       <p><strong>Given:</strong></p>
       <ul>
         <li>8088 running at 4.77 MHz (T_state = 1/4.77 MHz = 209.6 ns)</li>
@@ -3338,7 +3409,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon amber">T2</span> Wait State Calculation</h3>
+      <h3><span class="icon amber">T2</span> Wait State Calculation <a href="#timing" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §01.4 Timing</a></h3>
       <p><strong>Given:</strong></p>
       <ul>
         <li>8088 at 5 MHz (T_state = 200 ns)</li>
@@ -3373,7 +3444,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon amber">T3</span> DRAM Compatibility Check</h3>
+      <h3><span class="icon amber">T3</span> DRAM Compatibility Check <a href="#dram-timing" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §02.1 DRAM Timing</a></h3>
       <p><strong>Given:</strong></p>
       <ul>
         <li>A DRAM chip with tRC (read cycle time) = 250 ns</li>
@@ -3397,7 +3468,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon amber">T4</span> CPU vs DMA Transfer Time Comparison</h3>
+      <h3><span class="icon amber">T4</span> CPU vs DMA Transfer Time Comparison <a href="#dma" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §04 DMA</a></h3>
       <p><strong>Given (from compiled-modules.pdf p.49, HC11 example):</strong></p>
       <ul>
         <li>HC11 CPU doing a 256-byte memory-to-memory copy using a loop</li>
@@ -3429,7 +3500,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon amber">T5</span> Memory Bandwidth Calculation — Pentium Burst</h3>
+      <h3><span class="icon amber">T5</span> Memory Bandwidth Calculation — Pentium Burst <a href="#modern-dram" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §05.1 Modern DRAM</a></h3>
       <p><strong>Given:</strong></p>
       <ul>
         <li>Pentium CPU with 64-bit (8-byte) data bus at 66 MHz</li>
@@ -3453,7 +3524,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon amber">T6</span> SDRAM Efficiency Comparison</h3>
+      <h3><span class="icon amber">T6</span> SDRAM Efficiency Comparison <a href="#modern-dram" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §05.1 Modern DRAM</a></h3>
       <p><strong>Given:</strong> A CPU with ideal burst pattern 2-1-1-1 (5T total for 32-byte cache line fill at 66 MHz).</p>
       <p><strong>Memory types and their actual cycle patterns:</strong></p>
       <ul>
@@ -3483,7 +3554,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon amber">T7</span> DDR Data Rate Calculation</h3>
+      <h3><span class="icon amber">T7</span> DDR Data Rate Calculation <a href="#modern-dram" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §05.1 Modern DRAM</a></h3>
       <p><strong>Given:</strong></p>
       <ul>
         <li>DDR2 memory with 266 MHz I/O bus clock</li>
@@ -3513,7 +3584,7 @@ mark {
     <h2>Practice Problems: Design & Analysis</h2>
 
     <div class="card">
-      <h3><span class="icon purple">D1</span> 8086 Word Access Scenario</h3>
+      <h3><span class="icon purple">D1</span> 8086 Word Access Scenario <a href="#8086-databus" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §01.5 Data Bus</a></h3>
       <p><strong>Question:</strong> The 8086 executes <code>MOV AX, [2001h]</code>. Describe exactly what happens on the bus. How many bus cycles? What are the values of BHE' and A0 in each cycle?</p>
 
       <details style="margin-top:12px;">
@@ -3542,7 +3613,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon purple">D2</span> Interrupt Vector Table Lookup</h3>
+      <h3><span class="icon purple">D2</span> Interrupt Vector Table Lookup <a href="#interrupts" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §03 Interrupts</a></h3>
       <p><strong>Question:</strong> An 8259 PIC is configured with a base vector of 82h. A device on IR3 interrupts the CPU. What is the interrupt type number? What is the vector table address? If the ISR is located at CS:IP = 0000:3000h, what values are stored in the vector table?</p>
 
       <details style="margin-top:12px;">
@@ -3565,7 +3636,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon purple">D3</span> DMA Transfer Sequence Trace</h3>
+      <h3><span class="icon purple">D3</span> DMA Transfer Sequence Trace <a href="#dma" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §04 DMA</a></h3>
       <p><strong>Question:</strong> A floppy disk controller connected to DREQ1 of an 8237 needs to transfer 512 bytes into memory starting at address 8000h. Describe the complete sequence of events from the moment the FDC is ready until the transfer completes.</p>
 
       <details style="margin-top:12px;">
@@ -3606,7 +3677,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon purple">D4</span> DRAM Refresh Timing</h3>
+      <h3><span class="icon purple">D4</span> DRAM Refresh Timing <a href="#dram-refresh" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §02.2 Refresh</a></h3>
       <p><strong>Question:</strong> A DRAM has 512 rows and requires all rows to be refreshed within 8 ms. If using distributed refresh, what is the maximum time between individual refresh cycles? If each refresh cycle takes 200 ns, what percentage of the bus time is consumed by refresh?</p>
 
       <details style="margin-top:12px;">
@@ -3629,7 +3700,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon purple">D5</span> Complete System Trace: What Happens When You Press a Key?</h3>
+      <h3><span class="icon purple">D5</span> Complete System Trace: What Happens When You Press a Key? <a href="#pc-arch" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §05 PC/XT</a></h3>
       <p><strong>Question:</strong> In an IBM PC/XT, trace what happens from the moment a key is pressed on the keyboard until the CPU processes it. Mention the specific chips involved.</p>
 
       <details style="margin-top:12px;">
@@ -3653,7 +3724,7 @@ mark {
 
 
     <div class="card">
-      <h3><span class="icon purple">D6</span> Interrupt Request Circuit Analysis</h3>
+      <h3><span class="icon purple">D6</span> Interrupt Request Circuit Analysis <a href="#interrupts" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §03 Interrupts</a></h3>
       <p><strong>Question (from Jan 22 lecture):</strong> The diagram shows a simple interrupt circuit: a D flip-flop (DQ=VCC, CLK=device request, RESET=INTA'), connected to a 74LS244 buffer (enable=INTA') that outputs a hardwired type number onto D0-D7. The type number is hardwired as 10000010 (82h). Explain: (a) Why does sending the type number on the first INTA' not cause a problem? (b) What is the vector table address for this device?</p>
 
       <details open style="margin-top:12px;">
@@ -3666,7 +3737,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon purple">D7</span> 8259 Cascading: Available Interrupt Lines</h3>
+      <h3><span class="icon purple">D7</span> 8259 Cascading: Available Interrupt Lines <a href="#8259" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §03.1 8259 PIC</a></h3>
       <p><strong>Question:</strong> You need to support 20 interrupt sources. How many 8259 chips do you need? How many interrupt lines are actually available? Draw the connection hierarchy.</p>
 
       <details open style="margin-top:12px;">
@@ -3687,7 +3758,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon purple">D8</span> DMA Block Transfer — Worst Case Timing (from Jan 29 in-class problem)</h3>
+      <h3><span class="icon purple">D8</span> DMA Block Transfer — Worst Case Timing (from Jan 29 in-class problem) <a href="#dma" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §04 DMA</a></h3>
       <p><strong>Given:</strong> 8237 DMAC at 4 MHz. Block transfer of 256 bytes. Start address is NOT on a 256-byte boundary (worst case).</p>
       <p><strong>Question:</strong> Calculate the total transfer time.</p>
 
@@ -3711,7 +3782,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon purple">D9</span> DMA Single Transfer — CPU Interleaved Timing</h3>
+      <h3><span class="icon purple">D9</span> DMA Single Transfer — CPU Interleaved Timing <a href="#dma" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §04 DMA</a></h3>
       <p><strong>Given:</strong> Same 8237 at 4 MHz, 8088 also at 4 MHz. Single transfer mode, 256 bytes. Best case: CPU takes exactly 1 machine cycle (4 T-states) between DMA transfers.</p>
       <p><strong>Question:</strong> Calculate total transfer time and compare to block mode.</p>
 
@@ -3737,7 +3808,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon purple">D10</span> Divide-by-3 Circuit Design</h3>
+      <h3><span class="icon purple">D10</span> Divide-by-3 Circuit Design <a href="#8284-clock" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §01.2 Clock Gen</a></h3>
       <p><strong>Question (from Jan 8 lecture — Sir Clem explicitly mentioned this as a quiz question):</strong> Design a divide-by-3 circuit using flip-flops that produces a 33% duty cycle output.</p>
 
       <details open style="margin-top:12px;">
@@ -3764,7 +3835,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon purple">D11</span> 50% Duty Cycle Maximum Frequency</h3>
+      <h3><span class="icon purple">D11</span> 50% Duty Cycle Maximum Frequency <a href="#8284-clock" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §01.2 Clock Gen</a></h3>
       <p><strong>Question (from Jan 8 lecture):</strong> The 8088 requires minimum clock low time (tCL) = 118 ns and minimum clock high time (tCH) = 69 ns. If you can only produce a 50% duty cycle clock, what is the maximum frequency you can run the 8088 at?</p>
 
       <details open style="margin-top:12px;">
@@ -3782,7 +3853,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon purple">D12</span> DMA Memory-to-Memory Transfer Analysis</h3>
+      <h3><span class="icon purple">D12</span> DMA Memory-to-Memory Transfer Analysis <a href="#dma" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §04 DMA</a></h3>
       <p><strong>Question:</strong> The 8237 is programmed for memory-to-memory transfer. Ch0 base address = 1000h, Ch1 base address = 5000h, Ch1 word count = 255 (256 bytes). The DMAC runs at 4 MHz.</p>
       <p>(a) Which channel controls the source? Which controls the destination?</p>
       <p>(b) How many DMA states per byte transfer?</p>
@@ -3805,7 +3876,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon purple">D13</span> DDR Generation Identification</h3>
+      <h3><span class="icon purple">D13</span> DDR Generation Identification <a href="#modern-dram" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §05.1 Modern DRAM</a></h3>
       <p><strong>Question:</strong> A student observes a memory module with the following specs: 1.5V, 8 banks, 8n prefetch, differential DQS only, supports write leveling, uses a fly-by bus topology, has a ZQ calibration pin. (a) Which DDR generation is this? (b) If it has a data rate of 1066 Mbits/s per pin, what would its typical JEDEC latency be? (c) What is the actual CAS latency in nanoseconds?</p>
 
       <details open style="margin-top:12px;">
@@ -3823,7 +3894,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon purple">D14</span> PC/XT Memory Map & I/O Address Identification</h3>
+      <h3><span class="icon purple">D14</span> PC/XT Memory Map & I/O Address Identification <a href="#pc-arch" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §05 PC/XT</a></h3>
       <p><strong>Question:</strong> For each address, identify what device or memory region is being accessed:</p>
       <ul>
         <li>(a) Memory address B8000h</li>
@@ -3850,7 +3921,7 @@ mark {
     </div>
 
     <div class="card">
-      <h3><span class="icon purple">D15</span> DDR Architecture Comparison — Fill in the Blanks</h3>
+      <h3><span class="icon purple">D15</span> DDR Architecture Comparison — Fill in the Blanks <a href="#modern-dram" style="float:right;font-size:11px;color:var(--text-dim);text-decoration:none;font-weight:500;opacity:0.7;" title="Jump to source section">📖 §05.1 Modern DRAM</a></h3>
       <p><strong>Question:</strong> Complete this table from memory:</p>
       <div class="table-wrap">
         <table style="font-size:13px;">
